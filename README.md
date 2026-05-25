@@ -1,5 +1,7 @@
 # Pyfus 
 
+![Pyfus Application Preview](image.png)
+
 Pyfus is a lightweight, dedicated, high-speed Linux USB flasher designed to clone bootable ISO images directly onto raw hardware blocks. It features a modern dark-mode GUI driven by CustomTkinter, full block isolation routines to bypass system lock loops, and an optimized `dd` execution core.
 
 ##  Features
@@ -19,6 +21,5 @@ No Python or library installations required!
    ```bash
    chmod +x pyfus
    sudo ./pyfus
-
 ##  License
 This project is open-source under the **MIT License**.
