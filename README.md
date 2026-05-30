@@ -11,6 +11,9 @@ Pyfus is a lightweight, dedicated, high-speed Linux USB flasher designed to clon
 
 ---
 
+## Issues 
+You tell me ;)
+
 ##  How to Install & Run
 
 ### Option 1: Standalone Binary (Recommended)
