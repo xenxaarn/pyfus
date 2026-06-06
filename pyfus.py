@@ -36,7 +36,7 @@ class PyfusApp(ctk.CTk):
         super().__init__()
         
         self.title("Pyfus - Dedicated Linux USB Flasher")
-        self.geometry("540x610")
+        self.geometry("540x690")
         self.resizable(False, False)
         
         # State variables
@@ -44,6 +44,7 @@ class PyfusApp(ctk.CTk):
         self.selected_drive = ctk.StringVar()
         self.partition_scheme = ctk.StringVar(value="gpt")
         self.target_system = ctk.StringVar(value="uefi")
+        self.operation_mode = ctk.StringVar(value="flash")
         self.is_flashing = False
         self.usb_drives_data = {}
 
@@ -51,6 +52,21 @@ class PyfusApp(ctk.CTk):
         self.refresh_drives()
 
     def setup_ui(self):
+        # --- 0. Operation Mode ---
+        mode_frame = ctk.CTkFrame(self, corner_radius=10)
+        mode_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(mode_frame, text="Select Operation Mode", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=(10, 5))
+        
+        mode_inner = ctk.CTkFrame(mode_frame, fg_color="transparent")
+        mode_inner.pack(fill="x", padx=15, pady=(0, 10))
+        
+        self.flash_radio = ctk.CTkRadioButton(mode_inner, text="Flash ISO Image", variable=self.operation_mode, value="flash", command=self.toggle_mode)
+        self.flash_radio.pack(side="left", padx=(0, 20))
+        
+        self.erase_radio = ctk.CTkRadioButton(mode_inner, text="Quick Erase & Format (Reclaim USB)", variable=self.operation_mode, value="erase", command=self.toggle_mode)
+        self.erase_radio.pack(side="left")
+
         # --- 1. ISO Selection ---
         iso_frame = ctk.CTkFrame(self, corner_radius=10)
         iso_frame.pack(fill="x", padx=20, pady=10)
@@ -63,7 +79,8 @@ class PyfusApp(ctk.CTk):
         self.path_entry = ctk.CTkEntry(iso_inner, textvariable=self.iso_path, placeholder_text="/home/username/Downloads/linux.iso")
         self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
-        ctk.CTkButton(iso_inner, text="Browse", width=90, command=self.browse_iso).pack(side="right")
+        self.browse_btn = ctk.CTkButton(iso_inner, text="Browse", width=90, command=self.browse_iso)
+        self.browse_btn.pack(side="right")
 
         # --- 2. Device Selection ---
         device_frame = ctk.CTkFrame(self, corner_radius=10)
@@ -83,18 +100,18 @@ class PyfusApp(ctk.CTk):
         
         ctk.CTkLabel(opts_frame, text="3. Advanced Partition Configuration", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=(10, 5))
         
-        grid_frame = ctk.CTkFrame(opts_frame, fg_color="transparent")
-        grid_frame.pack(fill="x", padx=15, pady=(0, 15))
+        self.grid_frame = ctk.CTkFrame(opts_frame, fg_color="transparent")
+        self.grid_frame.pack(fill="x", padx=15, pady=(0, 15))
         
         # Partition Layout Group
-        ctk.CTkLabel(grid_frame, text="Partition scheme:").grid(row=0, column=0, sticky="w", pady=8)
-        ctk.CTkRadioButton(grid_frame, text="MBR (Legacy compatibility)", variable=self.partition_scheme, value="mbr").grid(row=0, column=1, padx=20, sticky="w")
-        ctk.CTkRadioButton(grid_frame, text="GPT (Modern Layout)", variable=self.partition_scheme, value="gpt").grid(row=0, column=2, padx=20, sticky="w")
+        ctk.CTkLabel(self.grid_frame, text="Partition scheme:").grid(row=0, column=0, sticky="w", pady=8)
+        ctk.CTkRadioButton(self.grid_frame, text="MBR (Legacy compatibility)", variable=self.partition_scheme, value="mbr").grid(row=0, column=1, padx=20, sticky="w")
+        ctk.CTkRadioButton(self.grid_frame, text="GPT (Modern Layout)", variable=self.partition_scheme, value="gpt").grid(row=0, column=2, padx=20, sticky="w")
         
         # Target System Architecture Group
-        ctk.CTkLabel(grid_frame, text="Target system:").grid(row=1, column=0, sticky="w", pady=8)
-        ctk.CTkRadioButton(grid_frame, text="BIOS (or UEFI-CSM)", variable=self.target_system, value="bios").grid(row=1, column=1, padx=20, sticky="w")
-        ctk.CTkRadioButton(grid_frame, text="UEFI (non CSM)", variable=self.target_system, value="uefi").grid(row=1, column=2, padx=20, sticky="w")
+        ctk.CTkLabel(self.grid_frame, text="Target system:").grid(row=1, column=0, sticky="w", pady=8)
+        ctk.CTkRadioButton(self.grid_frame, text="BIOS (or UEFI-CSM)", variable=self.target_system, value="bios").grid(row=1, column=1, padx=20, sticky="w")
+        ctk.CTkRadioButton(self.grid_frame, text="UEFI (non CSM)", variable=self.target_system, value="uefi").grid(row=1, column=2, padx=20, sticky="w")
 
         # --- 4. Progress Hub ---
         exec_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -177,6 +194,17 @@ class PyfusApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"Linux storage mapping system failed:\n{str(e)}")
 
+    def toggle_mode(self):
+        mode = self.operation_mode.get()
+        if mode == "erase":
+            self.path_entry.configure(state="disabled")
+            self.browse_btn.configure(state="disabled")
+            self.start_btn.configure(text="START SECURE ERASE & FORMAT", fg_color="#2b8a3e", hover_color="#237032")
+        else:
+            self.path_entry.configure(state="normal")
+            self.browse_btn.configure(state="normal")
+            self.start_btn.configure(text="START EXTRACTION & FLASH", fg_color="#d9534f", hover_color="#c9302c")
+
     def confirm_and_start(self):
         if self.is_flashing: return
         
@@ -187,24 +215,40 @@ class PyfusApp(ctk.CTk):
         iso = clean_path
         drive_label = self.selected_drive.get()
 
-        if not iso or not os.path.exists(iso):
-            messagebox.showerror("Error", f"Cannot access file position location:\n{iso}\nPlease check path accuracy.")
-            return
+        if self.operation_mode.get() == "flash":
+            if not iso or not os.path.exists(iso):
+                messagebox.showerror("Error", f"Cannot access file position location:\n{iso}\nPlease check path accuracy.")
+                return
         if drive_label not in self.usb_drives_data:
             messagebox.showerror("Error", "Please select a valid hardware device target.")
             return
 
         target_dev = self.usb_drives_data[drive_label]
-        confirm = messagebox.askyesno(
-            "⚠️ DATA DESTRUCTION WARNING",
-            f"ALL DATA ON '{drive_label}' WILL BE WIPED FOREVER!\n\n"
-            "Pyfus will now force-unmount and partition the raw blocks. Continue?", icon="warning"
-        )
+        
+        if self.operation_mode.get() == "flash":
+            confirm = messagebox.askyesno(
+                "⚠️ DATA DESTRUCTION WARNING",
+                f"ALL DATA ON '{drive_label}' WILL BE WIPED FOREVER!\n\n"
+                "Pyfus will now force-unmount and partition the raw blocks. Continue?", icon="warning"
+            )
+        else:
+            confirm = messagebox.askyesno(
+                "⚠️ SECURE ERASE WARNING",
+                f"ALL DATA ON '{drive_label}' WILL BE DELETED AND FORMATTED!\n\n"
+                "Pyfus will completely erase all partition tables, map a clean layout, and format with FAT32. Continue?", icon="warning"
+            )
+            
         if confirm:
             self.is_flashing = True
             self.start_btn.configure(state="disabled", fg_color="#555555")
             self.drive_dropdown.configure(state="disabled")
-            threading.Thread(target=self.flash_worker, args=(iso, target_dev), daemon=True).start()
+            self.flash_radio.configure(state="disabled")
+            self.erase_radio.configure(state="disabled")
+            
+            if self.operation_mode.get() == "flash":
+                threading.Thread(target=self.flash_worker, args=(iso, target_dev), daemon=True).start()
+            else:
+                threading.Thread(target=self.erase_worker, args=(target_dev,), daemon=True).start()
 
     def flash_worker(self, iso_path, drive_path):
         try:
@@ -234,6 +278,9 @@ class PyfusApp(ctk.CTk):
             cmd = ["dd", f"if={iso_path}", f"of={drive_path}", "bs=4M", "status=progress", "oflag=direct,sync"]
             process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 
+            import time
+            start_time = time.time()
+
             while True:
                 line = process.stderr.readline()
                 if not line and process.poll() is not None:
@@ -244,8 +291,27 @@ class PyfusApp(ctk.CTk):
                         bytes_copied = int(match.group(1))
                         percentage = bytes_copied / total_bytes
                         
+                        # Speed & ETA calculation
+                        elapsed_time = time.time() - start_time
+                        if elapsed_time > 0:
+                            speed_bps = bytes_copied / elapsed_time
+                            speed_mbps = speed_bps / (1024 * 1024)
+                            
+                            remaining_bytes = total_bytes - bytes_copied
+                            if speed_bps > 0:
+                                eta_seconds = remaining_bytes / speed_bps
+                                if eta_seconds > 60:
+                                    eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+                                else:
+                                    eta_str = f"{int(eta_seconds)}s"
+                            else:
+                                eta_str = "--s"
+                        else:
+                            speed_mbps = 0.0
+                            eta_str = "--s"
+                        
                         self.progress_bar.set(percentage)
-                        self.status_label.configure(text=f"Status: Copying image blocks... {percentage*100:.1f}%")
+                        self.status_label.configure(text=f"Status: Copying... {percentage*100:.1f}% ({speed_mbps:.1f} MB/s, ETA: {eta_str})")
                         self.update_idletasks()
 
             if process.returncode != 0:
@@ -268,6 +334,75 @@ class PyfusApp(ctk.CTk):
             self.is_flashing = False
             self.start_btn.configure(state="normal", fg_color="#d9534f")
             self.drive_dropdown.configure(state="normal")
+            self.flash_radio.configure(state="normal")
+            self.erase_radio.configure(state="normal")
+            self.progress_bar.set(0)
+
+    def erase_worker(self, drive_path):
+        try:
+            self.status_label.configure(text="Status: Forcing absolute system drive lockdown...")
+            subprocess.run(["fuser", "-f", "-k", f"{drive_path}*"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL, shell=True)
+            subprocess.run(["udisksctl", "unmount", "-b", f"{drive_path}1"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+            subprocess.run(["umount", "-f", f"{drive_path}*"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL, shell=True)
+            
+            drive_name = drive_path.split("/")[-1]
+            subprocess.run(["dmsetup", "remove", f"{drive_name}*"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL, shell=True)
+            
+            self.progress_bar.set(0.1)
+            self.status_label.configure(text="Status: Wiping all existing block signatures...")
+            subprocess.run(["wipefs", "-a", "-f", drive_path], check=True)
+            
+            self.progress_bar.set(0.3)
+            self.status_label.configure(text="Status: Creating fresh partition layout geometries...")
+            table_type = "msdos" if self.partition_scheme.get() == "mbr" else "gpt"
+            subprocess.run(["parted", drive_path, "mklabel", table_type, "-s"], check=True)
+            
+            self.progress_bar.set(0.5)
+            self.status_label.configure(text="Status: Creating primary FAT32 partition...")
+            subprocess.run(["parted", drive_path, "mkpart", "primary", "fat32", "1MiB", "100%"], check=True)
+            
+            if self.target_system.get() == "uefi":
+                subprocess.run(["parted", drive_path, "set", "1", "esp", "on"], check=True)
+            else:
+                subprocess.run(["parted", drive_path, "set", "1", "boot", "on"], check=True)
+                
+            self.progress_bar.set(0.7)
+            self.status_label.configure(text="Status: Formatting partition as compatible FAT32...")
+            
+            # Determine correct partition suffix for nvme/mmcblk or sdX devices
+            part_suffix = "p1" if "nvme" in drive_path or "mmcblk" in drive_path else "1"
+            partition_path = drive_path + part_suffix
+            
+            # Make sure system registers the new partition before formatting
+            import time
+            time.sleep(1)
+            subprocess.run(["udevadm", "settle"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+            
+            # Format partition with vfat (FAT32)
+            cmd = ["mkfs.vfat", "-F", "32", "-n", "PYFUS_USB", partition_path]
+            subprocess.run(cmd, check=True)
+            
+            self.progress_bar.set(0.9)
+            self.status_label.configure(text="Status: Flushing OS cache to physical USB silicon...")
+            subprocess.run(["sync"], check=True)
+            
+            self.progress_bar.set(1.0)
+            self.status_label.configure(text="Status: Success! Drive erased and formatted to FAT32.")
+            messagebox.showinfo("Success", "USB Drive erased and formatted successfully with FAT32!")
+            
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("System Error", f"An internal Linux sub-process returned an error code:\n{str(e)}")
+            self.status_label.configure(text="Status: Execution aborted due to system tool failure.")
+        except Exception as e:
+            messagebox.showerror("Unexpected Error", f"Fatal execution breakdown:\n{str(e)}")
+            self.status_label.configure(text="Status: Process halted.")
+        finally:
+            self.is_flashing = False
+            self.start_btn.configure(state="normal")
+            self.toggle_mode()
+            self.drive_dropdown.configure(state="normal")
+            self.flash_radio.configure(state="normal")
+            self.erase_radio.configure(state="normal")
             self.progress_bar.set(0)
 
 if __name__ == "__main__":
